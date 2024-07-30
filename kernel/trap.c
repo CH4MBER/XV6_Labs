@@ -55,18 +55,21 @@ usertrap(void)
 
     if(p->killed)
       exit(-1);
-
     // sepc points to the ecall instruction,
     // but we want to return to the next instruction.
     p->trapframe->epc += 4;
-
     // an interrupt will change sstatus &c registers,
     // so don't enable until done with those registers.
     intr_on();
-
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if(r_scause() == 13 || r_scause() == 15) {
+  uint64 fault_va = r_stval();  // 获取出错的虚拟地址
+  if(fault_va >= p->sz
+    || cowpage(p->pagetable, fault_va) != 0
+    || cowalloc(p->pagetable, PGROUNDDOWN(fault_va)) == 0)
+    p->killed = 1;
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
@@ -75,7 +78,6 @@ usertrap(void)
 
   if(p->killed)
     exit(-1);
-
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2)
     yield();
